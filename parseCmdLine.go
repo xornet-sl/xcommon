@@ -14,6 +14,13 @@ var UnknownCommandlineCommandError = errors.New("Unknown command line command")
 
 type CommandHandler func(ctx context.Context) error
 
+type CmdlineCommandGroup struct {
+	Description  string           // Can be used like a chapter in help. Can be empty. By default in help they won't be separated
+	Commands     []CmdlineCommand // A list of commands
+	GroupFlagSet *flag.FlagSet    // Flags that are common for group
+	Hidden       bool             // Is this group of commands are hidden from help (some debug/special commands)
+}
+
 type CmdlineCommand struct {
 	Name           string         // Name of the command (case-insensitive)
 	Description    string         // Description (can be displayed in help)
@@ -27,10 +34,10 @@ type CmdlineCommand struct {
 // Supported commandful and commandless interfaces
 // If commands declared they should be specified by user as a first positional argument
 type CmdlineMap struct {
-	CommonFlagSet    *flag.FlagSet    // All common flags (e.g. log levels, config sources, etc.)
-	Commands         []CmdlineCommand // List of supported commands. All commands are case-insensitive
-	NoCommandFlagSet *flag.FlagSet    // Flagset that is active when user don't specify command
-	NoCommandHandler CommandHandler   // Handler func in case if there is no command specified
+	CommonFlagSet    *flag.FlagSet         // All common flags (e.g. log levels, config sources, etc.)
+	CommandGoups     []CmdlineCommandGroup // List of supported command groups. All commands are case-insensitive and must be uniq
+	NoCommandFlagSet *flag.FlagSet         // Flagset that is active when user don't specify command
+	NoCommandHandler CommandHandler        // Handler func in case if there is no command specified
 }
 
 var _cmdlineMap *CmdlineMap = nil
@@ -59,23 +66,32 @@ func parseCmdLine(cmdlineMap CmdlineMap) (string, CommandHandler, error) {
 	var foundHandler CommandHandler = nil
 	arg := strings.ToLower(os.Args[1])
 	lower := strings.ToLower(arg)
-	for _, cmd := range cmdlineMap.Commands {
-		if lower == strings.ToLower(cmd.Name) {
-			cmdFound = true
-		} else {
-			for _, alias := range cmd.Aliases {
-				if lower == strings.ToLower(alias) {
-					cmdFound = true
-					break
+
+	for _, cmdGroup := range cmdlineMap.CommandGoups {
+		for _, cmd := range cmdGroup.Commands {
+			if lower == strings.ToLower(cmd.Name) {
+				cmdFound = true
+			} else {
+				for _, alias := range cmd.Aliases {
+					if lower == strings.ToLower(alias) {
+						cmdFound = true
+						break
+					}
 				}
+			}
+			if cmdFound {
+				foundCommand = cmd.Name
+				foundHandler = cmd.Handler
+				if cmdGroup.GroupFlagSet != nil {
+					flag.CommandLine.AddFlagSet(cmdGroup.GroupFlagSet)
+				}
+				if cmd.CommandFlagSet != nil {
+					flag.CommandLine.AddFlagSet(cmd.CommandFlagSet)
+				}
+				break
 			}
 		}
 		if cmdFound {
-			foundCommand = cmd.Name
-			foundHandler = cmd.Handler
-			if cmd.CommandFlagSet != nil {
-				flag.CommandLine.AddFlagSet(cmd.CommandFlagSet)
-			}
 			break
 		}
 	}
@@ -105,21 +121,37 @@ func parseCmdLine(cmdlineMap CmdlineMap) (string, CommandHandler, error) {
 	return foundCommand, foundHandler, nil
 }
 
+type subcommandGroupsShort struct {
+	Description string
+	Commands    []subcommandShort
+}
 type subcommandShort struct {
 	Name        string
 	Description string
 }
 
-func _getSubcommandList() []subcommandShort {
+func _getSubcommandGroupList() []subcommandGroupsShort {
 	if _cmdlineMap == nil {
-		return []subcommandShort{}
+		return []subcommandGroupsShort{}
 	}
-	ret := make([]subcommandShort, 0, len(_cmdlineMap.Commands))
-	for _, cmd := range _cmdlineMap.Commands {
-		if !cmd.Hidden {
-			ret = append(ret, subcommandShort{
-				Name:        cmd.Name,
-				Description: cmd.Description,
+	ret := make([]subcommandGroupsShort, 0, len(_cmdlineMap.CommandGoups))
+	for _, cmdGroup := range _cmdlineMap.CommandGoups {
+		if cmdGroup.Hidden {
+			continue
+		}
+		retSubcommands := make([]subcommandShort, 0, len(cmdGroup.Commands))
+		for _, cmd := range cmdGroup.Commands {
+			if !cmd.Hidden {
+				retSubcommands = append(retSubcommands, subcommandShort{
+					Name:        cmd.Name,
+					Description: cmd.Description,
+				})
+			}
+		}
+		if len(retSubcommands) > 0 {
+			ret = append(ret, subcommandGroupsShort{
+				Description: cmdGroup.Description,
+				Commands:    retSubcommands,
 			})
 		}
 	}

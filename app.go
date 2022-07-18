@@ -107,16 +107,37 @@ func DefaultNoCommandHandler(ctx context.Context) error {
 
 func printGeneralHelp() {
 	fmt.Fprintln(os.Stderr, "Available commands:")
-	cmdIndent := strings.Repeat(" ", 4)
+	cmdGroupIndent := ""
+	cmdIndent := ">>  "
 	descriptionIndent := strings.Repeat(" ", 8)
-	cmds := _getSubcommandList()
-	for _, cmd := range cmds {
-		fmt.Fprintf(os.Stderr, "%s%s\n", cmdIndent, cmd.Name)
-		if cmd.Description != "" {
-			// TODO: word-wrap description
-			fmt.Fprintf(os.Stderr, "%s%s\n", descriptionIndent, cmd.Description)
+	groups := _getSubcommandGroupList()
+	emptyIdx := -1
+	var cmdGroup subcommandGroupsShort
+	for idx := 0; idx < len(groups); idx++ {
+		cmdGroup = groups[idx]
+		if groups[idx].Description == "" && idx+1 < len(groups) {
+			emptyIdx = idx
+			continue
+		} else if emptyIdx > 0 && idx+1 == len(groups) || groups[idx].Description == "" {
+			if emptyIdx > 0 {
+				cmdGroup = groups[emptyIdx]
+			}
+			fmt.Fprintf(os.Stderr, "%s%s:\n", cmdGroupIndent, "Other commands")
+		} else {
+			fmt.Fprintf(os.Stderr, "%s%s:\n", cmdGroupIndent, strings.TrimRight(cmdGroup.Description, ":"))
 		}
-		fmt.Fprintln(os.Stderr)
+		for _, cmd := range cmdGroup.Commands {
+			fmt.Fprintf(os.Stderr, "%s%s\n", cmdIndent, cmd.Name)
+			if cmd.Description != "" {
+				// TODO: word-wrap description
+				fmt.Fprintf(os.Stderr, "%s%s\n", descriptionIndent, cmd.Description)
+			}
+			fmt.Fprintln(os.Stderr)
+		}
+		if idx+1 < len(groups) {
+			fmt.Fprintln(os.Stderr)
+		}
 	}
+	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "For each command --help is available for more information")
 }
