@@ -1,4 +1,4 @@
-module xcommon
+module github.com/xornet-sl/xcommon
 
 go 1.18
 
